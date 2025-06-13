@@ -1,6 +1,8 @@
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, ContextTypes, filters
 import os
+from dotenv import load_dotenv
+load_dotenv()
 
 # Вставь свой токен
 TOKEN = os.getenv("BOT_TOKEN")
