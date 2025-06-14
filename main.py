@@ -64,11 +64,8 @@ def handle_login_start(m):
 
 @bot.message_handler(func=lambda m: m.text == "💬 Чат")
 def handle_chat_mode(m):
-    st = user_states.get(m.chat.id, {})
-    if not st.get("client"):
-        bot.send_message(m.chat.id, "Сначала войдите через меню.")
-        send_main_menu(m.chat.id)
-        return
+    if m.chat.id not in user_states:
+        user_states[m.chat.id] = {"mode": None}
     user_states[m.chat.id]["mode"] = "chat"
     bot.send_message(m.chat.id, "Вы вошли в чат. Напишите сообщение менеджеру:")
 
@@ -111,23 +108,24 @@ def handle_all(m):
         send_main_menu(m.chat.id)
     elif mode == "chat":
         client = st.get("client")
-        if not client:
-            send_main_menu(m.chat.id)
-            return
         username = m.from_user.username or str(m.chat.id)
-        text = f"📩 Сообщение от @{username} (chat_id={m.chat.id}, client_id={client['id']}):\n{m.text}"
+        text = f"📩 Сообщение от @{username} (chat_id={m.chat.id}"
+        if client:
+            text += f", client_id={client['id']}"
+        text += f"):\n{m.text}"
         bot.send_message(MANAGER_CHAT_ID, text)
     else:
         send_main_menu(m.chat.id)
 
 @bot.message_handler(content_types=['text'], chat_types=['supergroup', 'group'])
 def handle_manager_reply(m):
-    if m.chat.id != MANAGER_CHAT_ID: return
+    if m.chat.id != MANAGER_CHAT_ID:
+        return
     if not m.reply_to_message or "chat_id=" not in m.reply_to_message.text:
         return
     try:
         part = m.reply_to_message.text.split("chat_id=")[1]
-        chat_id = int(part.split(",")[0])
+        chat_id = int(part.split(",")[0].split(")")[0])
         bot.send_message(chat_id, f"Ответ менеджера:\n{m.text}")
     except Exception as e:
         logging.error(f"Ошибка при пересылке ответа: {e}")
