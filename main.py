@@ -1,142 +1,108 @@
 import os
 import logging
-import requests
 from telebot import TeleBot, types
 from dotenv import load_dotenv
 
 load_dotenv()
 
 TELEGRAM_TOKEN = os.getenv("BOT_TOKEN")
-MANAGER_CHAT_ID = os.getenv("MANAGER_CHAT_ID")
-API_BASE_URL = os.getenv("API_BASE_URL")
-
-# Проверка обязательных переменных
-if not TELEGRAM_TOKEN or not MANAGER_CHAT_ID or not API_BASE_URL:
-    logging.error("Недостаточно переменных окружения: BOT_TOKEN, MANAGER_CHAT_ID, API_BASE_URL")
-    exit(1)
-
-MANAGER_CHAT_ID = int(MANAGER_CHAT_ID)
+MANAGER_CHAT_ID = int(os.getenv("MANAGER_CHAT_ID"))
 
 bot = TeleBot(TELEGRAM_TOKEN)
+BOT_ID = None  # получим позже
+
+# Состояния пользователей
+user_states = {}
+
 logging.basicConfig(level=logging.INFO)
 
-# Состояние: chat_id → {"mode":"auth"/"auth_phone"/"chat"/None, "last_name", "candidates", "client"}
-user_states = {}
 
 def send_main_menu(chat_id):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.row("🔑 Вход", "💬 Чат")
     bot.send_message(chat_id, "Выберите действие:", reply_markup=markup)
 
-def find_clients_by_last_name(last_name):
-    try:
-        resp = requests.get(f"{API_BASE_URL}/clients/by_last_name", params={"last_name": last_name})
-        resp.raise_for_status()
-        return resp.json()
-    except Exception as e:
-        logging.error(f"Ошибка запроса /clients/by_last_name: {e}")
-        return []
-
-def find_client_by_last_name_and_phone(last_name, phone):
-    try:
-        resp = requests.get(f"{API_BASE_URL}/clients/by_last_name", params={"last_name": last_name})
-        resp.raise_for_status()
-        clients = resp.json()
-        for c in clients:
-            if c.get("phone") == phone:
-                return c
-        return None
-    except Exception as e:
-        logging.error(f"Ошибка запроса при авторизации по телефону: {e}")
-        return None
 
 @bot.message_handler(commands=['start'])
-def handle_start(m):
-    logging.info(f"/start от {m.chat.id}")
-    user_states[m.chat.id] = {"mode": None}
-    send_main_menu(m.chat.id)
+def handle_start(message):
+    user_states[message.chat.id] = {"mode": None}
+    send_main_menu(message.chat.id)
+
 
 @bot.message_handler(func=lambda m: m.text == "🔑 Вход")
-def handle_login_start(m):
-    logging.info(f"Начало входа {m.chat.id}")
-    user_states[m.chat.id] = {"mode": "auth", "last_name": "", "candidates": [], "client": None}
-    bot.send_message(m.chat.id, "Введите фамилию:")
+def handle_login(message):
+    user_states[message.chat.id] = {"mode": "auth", "last_name": "", "awaiting_phone": False}
+    bot.send_message(message.chat.id, "Введите свою фамилию:")
+
 
 @bot.message_handler(func=lambda m: m.text == "💬 Чат")
-def handle_chat_mode(m):
-    st = user_states.get(m.chat.id, {})
-    if not st.get("client"):
-        bot.send_message(m.chat.id, "Сначала войдите через меню.")
-        send_main_menu(m.chat.id)
-        return
-    user_states[m.chat.id]["mode"] = "chat"
-    bot.send_message(m.chat.id, "Вы вошли в чат. Напишите сообщение менеджеру:")
+def handle_chat(message):
+    user_states[message.chat.id] = {"mode": "chat"}
+    bot.send_message(message.chat.id, "Вы можете писать сообщение. Мы свяжем вас с менеджером.")
 
-@bot.message_handler(func=lambda m: True)
-def handle_all(m):
-    if m.chat.id == MANAGER_CHAT_ID:
+
+@bot.message_handler(func=lambda m: True, content_types=['text'], chat_types=['private'])
+def handle_user_messages(message):
+    state = user_states.get(message.chat.id)
+
+    if not state:
+        send_main_menu(message.chat.id)
         return
 
-    st = user_states.get(m.chat.id)
-    if not st:
-        send_main_menu(m.chat.id)
-        return
-    mode = st["mode"]
+    if state["mode"] == "auth":
+        if not state["last_name"]:
+            state["last_name"] = message.text.strip()
+            if state["last_name"].lower() == "петров":
+                state["awaiting_phone"] = True
+                bot.send_message(message.chat.id, "У нас несколько Петровых. Введите телефон:")
+            else:
+                bot.send_message(message.chat.id, f"Привет, {state['last_name']}! Вы успешно вошли.")
+                user_states[message.chat.id] = {"mode": None}
+                send_main_menu(message.chat.id)
+        elif state.get("awaiting_phone"):
+            phone = message.text.strip()
+            bot.send_message(message.chat.id, f"Телефон {phone} принят. Вы вошли.")
+            user_states[message.chat.id] = {"mode": None}
+            send_main_menu(message.chat.id)
 
-    if mode == "auth":
-        ln = m.text.strip()
-        st["last_name"] = ln
-        clients = find_clients_by_last_name(ln)
-        if not clients:
-            bot.send_message(m.chat.id, "Клиенты с такой фамилией не найдены.")
-            return
-        if len(clients) == 1:
-            st["client"] = clients[0]
-            st["mode"] = None
-            bot.send_message(m.chat.id, f"Здравствуйте, {clients[0]['first_name']}! Вход успешен.")
-            send_main_menu(m.chat.id)
-        else:
-            st["candidates"] = clients
-            st["mode"] = "auth_phone"
-            bot.send_message(m.chat.id, f"Несколько клиентов найдены. Введите телефон:")
-    elif mode == "auth_phone":
-        phone = m.text.strip()
-        ln = st["last_name"]
-        client = find_client_by_last_name_and_phone(ln, phone)
-        if not client:
-            bot.send_message(m.chat.id, "Совпадений не найдено, введите заново:")
-            return
-        st["client"], st["mode"] = client, None
-        bot.send_message(m.chat.id, f"Здравствуйте, {client['first_name']}! Вход успешен.")
-        send_main_menu(m.chat.id)
-    elif mode == "chat":
-        client = st.get("client")
-        if not client:
-            send_main_menu(m.chat.id)
-            return
-        username = m.from_user.username or str(m.chat.id)
-        text = f"📩 Сообщение от @{username} (chat_id={m.chat.id}, client_id={client['id']}):\n{m.text}"
-        bot.send_message(MANAGER_CHAT_ID, text)
-    else:
-        send_main_menu(m.chat.id)
+    elif state["mode"] == "chat":
+        username = message.from_user.username or f"id{message.chat.id}"
+        text = f"📩 Сообщение от @{username} (chat_id={message.chat.id}):\n{message.text}"
+        sent_msg = bot.send_message(MANAGER_CHAT_ID, text)
+        logging.info(f"Пересылаем сообщение менеджерам от {message.chat.id} (@{username})")
 
-@bot.message_handler(content_types=['text'], chat_types=['supergroup', 'group'])
-def handle_manager_reply(m):
-    if m.chat.id != MANAGER_CHAT_ID:
+
+# ОБРАБОТКА СООБЩЕНИЙ В ГРУППЕ
+@bot.message_handler(func=lambda m: True, content_types=['text'], chat_types=['group', 'supergroup'])
+def handle_group_messages(message):
+    if not message.reply_to_message:
         return
-    if not m.reply_to_message or not m.reply_to_message.text:
+
+    replied = message.reply_to_message
+    if replied.from_user.id != BOT_ID:
+        return  # отвечено не боту
+
+    text = replied.text or ""
+    if "chat_id=" not in text:
         return
-    # Ищем chat_id пользователя в тексте сообщения, на которое отвечает менеджер
-    import re
-    match = re.search(r"chat_id=(\d+)", m.reply_to_message.text)
-    if not match:
-        return
+
     try:
-        chat_id = int(match.group(1))
-        bot.send_message(chat_id, f"Ответ менеджера:\n{m.text}")
+        chat_id_str = text.split("chat_id=")[1].split(")")[0]
+        target_chat_id = int(chat_id_str)
+        bot.send_message(target_chat_id, f"Ответ менеджера:\n{message.text}")
+        logging.info(f"Переслано сообщение от менеджера пользователю {target_chat_id}")
     except Exception as e:
-        logging.error(f"Ошибка при пересылке ответа менеджера пользователю: {e}")
+        logging.error(f"Ошибка при парсинге chat_id: {e}")
+
 
 if __name__ == "__main__":
     logging.info("Запуск бота")
+    try:
+        bot_info = bot.get_me()
+        BOT_ID = bot_info.id
+        logging.info(f"Бот ID: {BOT_ID}")
+        # Уведомление в админский чат
+        bot.send_message(MANAGER_CHAT_ID, "✅ Бот активен и готов к работе.")
+    except Exception as e:
+        logging.error(f"Ошибка при получении информации о боте или отправке уведомления: {e}")
     bot.infinity_polling()
