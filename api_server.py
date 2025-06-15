@@ -19,3 +19,5 @@ def get_by_last_name(last_name: str):
 @app.get("/clients/by_phone")
 def get_by_phone(phone: str):
     return data_store.find_clients_by_phone(phone)
+
+

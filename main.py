@@ -106,3 +106,4 @@ if __name__ == "__main__":
     except Exception as e:
         logging.error(f"Ошибка при получении информации о боте или отправке уведомления: {e}")
     bot.infinity_polling()
+

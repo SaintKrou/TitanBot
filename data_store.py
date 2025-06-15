@@ -12,3 +12,5 @@ def find_clients_by_last_name(last_name: str) -> List[Client]:
 
 def find_clients_by_phone(phone: str) -> List[Client]:
     return [c for c in clients if c.phone and c.phone == phone]
+
+

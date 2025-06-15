@@ -23,3 +23,4 @@ class Purchase(BaseModel):
     unlimited: bool
     duration_months: int
     cost: float
+
