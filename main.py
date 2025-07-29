@@ -1,5 +1,8 @@
 import os
 import logging
+import threading
+import http.server
+import socketserver
 from telebot import TeleBot, types
 from dotenv import load_dotenv
 import data_store
@@ -223,5 +226,13 @@ def run_bot():
 
     bot.infinity_polling()
 
+def dummy_http_server():
+    port = int(os.environ.get("PORT", 10000))
+    handler = http.server.SimpleHTTPRequestHandler
+    with socketserver.TCPServer(("", port), handler) as httpd:
+        logging.info(f"Фиктивный HTTP-сервер запущен на порту {port}")
+        httpd.serve_forever()
+
 if __name__ == "__main__":
+    threading.Thread(target=dummy_http_server).start()
     run_bot()
