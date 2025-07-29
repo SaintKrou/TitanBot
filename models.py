@@ -12,7 +12,7 @@ class Client(BaseModel):
     telegram: Optional[str] = Field(default="", alias="Telegram")
     comment: Optional[str] = Field(default="", alias="Comment")
     unlimited: bool = Field(alias="Unlimited")
-    phone: Optional[str] = ""
+    phone: Optional[str] = Field(default="", alias="Phone") 
 
     @validator("subscription_end", pre=True)
     def parse_subscription_end(cls, value):
