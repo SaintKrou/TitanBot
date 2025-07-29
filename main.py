@@ -3,11 +3,14 @@ import logging
 from telebot import TeleBot, types
 from dotenv import load_dotenv
 import data_store
+from datetime import datetime
 
 load_dotenv()
 
 TELEGRAM_TOKEN = os.getenv("BOT_TOKEN")
 MANAGER_CHAT_ID = int(os.getenv("MANAGER_CHAT_ID"))
+
+AMBIGUOUS_LAST_NAME = "петров"  # фамилия с несколькими клиентами, требующая уточнения по телефону
 
 bot = TeleBot(TELEGRAM_TOKEN)
 BOT_ID = None
@@ -20,15 +23,16 @@ def send_main_menu(chat_id):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
 
     is_authorized = data_store.is_user_authorized(chat_id)
-    is_in_chat = user_states.get(chat_id, {}).get("mode") == "chat"
+    mode = user_states.get(chat_id, {}).get("mode")
 
-    if is_authorized:
-        if is_in_chat:
-            markup.row("Завершить чат")
-        else:
-            markup.row("💬 Чат")
+    if mode == "chat":
+        markup.row("Завершить чат")
     else:
-        markup.row("🔑 Вход")
+        if is_authorized:
+            markup.row("💬 Чат", "👤 Профиль")
+            markup.row("🚪 Выйти")
+        else:
+            markup.row("💬 Чат", "🔑 Вход")
 
     bot.send_message(chat_id, "Выберите действие:", reply_markup=markup)
 
@@ -36,20 +40,16 @@ def send_main_menu(chat_id):
 @bot.message_handler(commands=['start'])
 def handle_start(message):
     chat_id = message.chat.id
-
-    if data_store.is_user_authorized(chat_id):
-        if chat_id not in user_states:
-            user_states[chat_id] = {"mode": None}
-    else:
+    if chat_id not in user_states:
         user_states[chat_id] = {"mode": None}
-
     send_main_menu(chat_id)
 
 
 @bot.message_handler(func=lambda m: m.text == "🔑 Вход")
 def handle_login(message):
-    user_states[message.chat.id] = {"mode": "auth", "last_name": "", "awaiting_phone": False}
-    bot.send_message(message.chat.id, "Введите свою фамилию:")
+    chat_id = message.chat.id
+    user_states[chat_id] = {"mode": "auth", "last_name": "", "awaiting_phone": False}
+    bot.send_message(chat_id, "Введите свою фамилию:")
 
 
 @bot.message_handler(func=lambda m: m.text == "💬 Чат")
@@ -66,30 +66,77 @@ def handle_chat(message):
 
 @bot.message_handler(func=lambda m: m.text == "Завершить чат")
 def handle_chat_end(message):
-    user_states[message.chat.id] = {"mode": None}
-    bot.send_message(message.chat.id, "✅ Чат завершён.")
-    send_main_menu(message.chat.id)
+    chat_id = message.chat.id
+    user_states.pop(chat_id, None)
+    bot.send_message(chat_id, "✅ Чат завершён.", reply_markup=types.ReplyKeyboardRemove())
+    send_main_menu(chat_id)
 
 
-@bot.message_handler(func=lambda m: True, content_types=['text'], chat_types=['private'])
+@bot.message_handler(func=lambda m: m.text == "🚪 Выйти")
+def handle_logout(message):
+    chat_id = message.chat.id
+    if data_store.is_user_authorized(chat_id):
+        data_store.remove_authorized_user(chat_id)
+    user_states.pop(chat_id, None)
+    bot.send_message(chat_id, "Вы вышли из аккаунта.")
+    send_main_menu(chat_id)
+
+
+@bot.message_handler(func=lambda m: m.text == "👤 Профиль")
+def handle_profile(message):
+    chat_id = message.chat.id
+    if not data_store.is_user_authorized(chat_id):
+        bot.send_message(chat_id, "Вы не авторизованы.")
+        return
+
+    user_info = data_store.get_user_info(chat_id)
+    last_name = user_info.get("last_name", "❓")
+    phone = user_info.get("phone", "")
+
+    client = data_store.find_client_by_last_name_and_phone(last_name, phone)
+    if not client:
+        bot.send_message(chat_id, "Профиль не найден в базе клиентов.")
+        return
+
+    today = datetime.today().date()
+    lines = [f"👤 *{last_name}*", f"📱 Телефон: `{phone}`"]
+
+    if client.unlimited:
+        if client.subscription_end and client.subscription_end.date() >= today:
+            lines.append(f"🗓Подписка активна до {client.subscription_end.date().strftime('%d.%m.%Y')}")
+            lines.append("✅ Посещения неограничены")
+        else:
+            lines.append("❌ Подписка истекла")
+    else:
+        if client.subscription_end and client.subscription_end.date() >= today:
+            lines.append(f"🗓Подписка до {client.subscription_end.date().strftime('%d.%m.%Y')}")
+            if client.purchased_sessions > 0:
+                lines.append(f"📘 Осталось занятий: {client.purchased_sessions}")
+            else:
+                lines.append("⚠️ Нет оставшихся занятий")
+        else:
+            lines.append("❌ Подписка неактивна")
+            if client.purchased_sessions > 0:
+                lines.append(f"📘 Осталось {client.purchased_sessions} занятий, будут активны после продления подписки")
+
+    bot.send_message(chat_id, "\n".join(lines), parse_mode="Markdown")
+
+
+@bot.message_handler(func=lambda m: user_states.get(m.chat.id, {}).get("mode") in ["auth", "chat"], content_types=['text'])
 def handle_user_messages(message):
     chat_id = message.chat.id
     state = user_states.get(chat_id)
-
-    if not state and data_store.is_user_authorized(chat_id):
-        user_states[chat_id] = {"mode": None}
-        state = user_states[chat_id]
-
     if not state:
+        user_states[chat_id] = {"mode": None}
         send_main_menu(chat_id)
         return
 
     if state["mode"] == "auth":
         if not state["last_name"]:
             state["last_name"] = message.text.strip()
-            if state["last_name"].lower() == "петров":
+            if state["last_name"].strip().lower() == AMBIGUOUS_LAST_NAME:
                 state["awaiting_phone"] = True
-                bot.send_message(chat_id, "У нас несколько Петровых. Введите телефон:")
+                bot.send_message(chat_id, "У нас несколько людей с такой фамилией. Введите ваш телефон:")
             else:
                 bot.send_message(chat_id, f"Привет, {state['last_name']}! Вы успешно вошли.")
                 data_store.add_authorized_user(chat_id, state["last_name"])
@@ -102,7 +149,7 @@ def handle_user_messages(message):
             user_states[chat_id] = {"mode": None}
             send_main_menu(chat_id)
 
-    elif state["mode"] == "chat" or data_store.is_user_authorized(chat_id):
+    elif state["mode"] == "chat":
         username = message.from_user.username or f"id{chat_id}"
         user_info = data_store.get_user_info(chat_id)
         last_name = user_info.get("last_name", "❓Неизвестно")

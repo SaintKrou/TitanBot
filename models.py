@@ -12,7 +12,7 @@ class Client(BaseModel):
     telegram: Optional[str] = Field(default="", alias="Telegram")
     comment: Optional[str] = Field(default="", alias="Comment")
     unlimited: bool = Field(alias="Unlimited")
-    phone: Optional[str] = Field(default="", alias="Phone")
+    phone: Optional[str] = ""
 
     @validator("subscription_end", pre=True)
     def parse_subscription_end(cls, value):
@@ -22,3 +22,11 @@ class Client(BaseModel):
             except ValueError:
                 return None
         return value
+
+class Purchase(BaseModel):
+    id: int
+    name: str
+    sessions_count: int
+    unlimited: bool
+    duration_months: int
+    cost: float
