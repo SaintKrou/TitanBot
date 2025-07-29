@@ -1,9 +1,6 @@
-# utils_yadisk.py
-
 import yadisk
 import logging
 import os
-
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -12,7 +9,6 @@ y = yadisk.YaDisk(token=YANDEX_TOKEN)
 
 def upload_file_yadisk(local_path: str, remote_path: str):
     try:
-        # Получаем папку (например, /titanbot)
         folder = os.path.dirname(remote_path)
         if not y.exists(folder):
             y.mkdir(folder)

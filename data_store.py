@@ -1,5 +1,3 @@
-# data_store.py
-
 from typing import List, Dict
 from models import Client
 import json

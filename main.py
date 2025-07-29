@@ -1,5 +1,3 @@
-# main.py
-
 import os
 import logging
 from telebot import TeleBot, types
