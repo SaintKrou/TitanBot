@@ -1,12 +1,16 @@
 import json
 import os
+import logging
 from models import Client
+from utils_yadisk import upload_file_yadisk
 
 clients = []
 auth_users = {}
 
 CLIENTS_FILE = "clients.json"
 AUTH_USERS_FILE = "auth_users.json"
+CLIENTS_REMOTE_FILE = "/titanbot/clients.json"
+AUTH_USERS_REMOTE_FILE = "/titanbot/auth_users.json"
 
 
 def restore_clients_from_file():
@@ -15,6 +19,9 @@ def restore_clients_from_file():
         with open(CLIENTS_FILE, "r", encoding="utf-8") as f:
             clients_data = json.load(f)
             clients = [Client(**client) for client in clients_data]
+        logging.info(f"✅ Загружено клиентов: {len(clients)}")
+    else:
+        logging.warning("⚠️ Файл clients.json не найден")
 
 
 def restore_auth_users():
@@ -22,11 +29,20 @@ def restore_auth_users():
     if os.path.exists(AUTH_USERS_FILE):
         with open(AUTH_USERS_FILE, "r", encoding="utf-8") as f:
             auth_users.update(json.load(f))
+        logging.info(f"✅ Загружено авторизованных пользователей: {len(auth_users)}")
+    else:
+        logging.warning("⚠️ Файл auth_users.json не найден")
 
 
 def save_auth_users():
     with open(AUTH_USERS_FILE, "w", encoding="utf-8") as f:
         json.dump(auth_users, f, ensure_ascii=False, indent=2)
+
+    try:
+        upload_file_yadisk(AUTH_USERS_FILE, AUTH_USERS_REMOTE_FILE)
+        logging.info("✅ auth_users.json загружен на Яндекс.Диск")
+    except Exception as e:
+        logging.error(f"❌ Ошибка при загрузке auth_users.json на Яндекс.Диск: {e}")
 
 
 def is_user_authorized(chat_id: int) -> bool:

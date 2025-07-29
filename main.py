@@ -22,6 +22,8 @@ logging.basicConfig(level=logging.INFO)
 
 CLIENTS_LOCAL_FILE = "clients.json"
 CLIENTS_REMOTE_FILE = "/titanbot/clients.json"
+AUTH_USERS_LOCAL_FILE = "auth_users.json"
+AUTH_USERS_REMOTE_FILE = "/titanbot/auth_users.json"
 
 def send_main_menu(chat_id):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
@@ -202,12 +204,18 @@ def run_bot():
 
     try:
         logging.info("Пробуем скачать clients.json с Яндекс.Диска...")
-        success = download_file_yadisk(CLIENTS_REMOTE_FILE, CLIENTS_LOCAL_FILE)
-
-        if success:
+        clients_ok = download_file_yadisk(CLIENTS_REMOTE_FILE, CLIENTS_LOCAL_FILE)
+        if clients_ok:
             logging.info("✅ Успешно скачан clients.json с Яндекс.Диска")
         else:
             logging.warning("⚠️ Не удалось скачать clients.json с Яндекс.Диска")
+
+        logging.info("Пробуем скачать auth_users.json с Яндекс.Диска...")
+        auth_ok = download_file_yadisk(AUTH_USERS_REMOTE_FILE, AUTH_USERS_LOCAL_FILE)
+        if auth_ok:
+            logging.info("✅ Успешно скачан auth_users.json с Яндекс.Диска")
+        else:
+            logging.warning("⚠️ Не удалось скачать auth_users.json с Яндекс.Диска")
 
         logging.info("Загружаем клиентов из локального файла...")
         data_store.restore_clients_from_file()
