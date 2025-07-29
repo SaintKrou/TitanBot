@@ -11,7 +11,7 @@ TMP_DIR = "tmp"
 os.makedirs(TMP_DIR, exist_ok=True)
 
 AUTH_USERS_PATH = os.path.join(TMP_DIR, "auth_users.json")
-CLIENTS_PATH = os.path.join(TMP_DIR, "clients_backup.json")
+CLIENTS_PATH = os.path.join(TMP_DIR, "clients.json")
 
 
 def save_auth_users():
@@ -54,11 +54,11 @@ def load_clients(new_clients: List[Client]):
 def save_clients():
     with open(CLIENTS_PATH, "w", encoding="utf-8") as f:
         json.dump([c.model_dump() for c in clients], f, indent=2, ensure_ascii=False)
-    upload_file_yadisk(CLIENTS_PATH, "/titanbot/clients_backup.json")
+    upload_file_yadisk(CLIENTS_PATH, "/titanbot/clients.json")
 
 
 def restore_clients_from_file():
-    if download_file_yadisk("/titanbot/clients_backup.json", CLIENTS_PATH):
+    if download_file_yadisk("/titanbot/clients.json", CLIENTS_PATH):
         try:
             with open(CLIENTS_PATH, "r", encoding="utf-8") as f:
                 data = json.load(f)
@@ -66,4 +66,4 @@ def restore_clients_from_file():
                 clients = [Client(**c) for c in data]
             print(f"✅ Восстановлено клиентов: {len(clients)}")
         except Exception as e:
-            print(f"❌ Ошибка при чтении clients_backup.json: {e}")
+            print(f"❌ Ошибка при чтении clients.json: {e}")
